@@ -5,8 +5,8 @@
 [![StyleCI](https://styleci.io/repos/42480275/shield)](https://styleci.io/repos/42480275)
 [![Total Downloads](https://img.shields.io/packagist/dt/spatie/laravel-permission.svg?style=flat-square)](https://packagist.org/packages/spatie/laravel-permission)
 
-Thanks to <img style="width:90px; height:30px; vertical-align:middle;" 
-    src="sponsor.svg"> for supporting this package. <a href="#sponsor">Read more…</a>
+<a href="#sponsor">Sponsored by <img width=90 valign=middle 
+    src="sponsor.svg"></a>
 
 * [Installation](#installation)
 * [Usage](#usage)
@@ -786,21 +786,22 @@ Special thanks to [Alex Vanderbist](https://github.com/AlexVanderbist) who great
 
 [Povilas Korop](https://twitter.com/@povilaskorop) did an excellent job listing the alternatives [in an article on Laravel News](https://laravel-news.com/two-best-roles-permissions-packages). In that same article, he compares laravel-permission to [Joseph Silber](https://github.com/JosephSilber)'s [Bouncer]((https://github.com/JosephSilber/bouncer)), which in our book is also an excellent package.
 
-## Sponsor
-
-<img style="width:90px; height:30px; vertical-align:middle;" 
-    src="sponsor.svg">
-
-This package is kindly sponsored by [Auth0](https://auth0.com) – The new way to solve Identity.
-
-Auth0 solves the most complex and large-scale identity use cases for global enterprises with their extensible and easy-to-integrate platform, securing billions of logins every year.
-
 ## Support us
 
 Spatie is a web design agency based in Antwerp, Belgium. You'll find an overview of all our open source projects [on our website](https://spatie.be/opensource).
 
 Does your business depend on our contributions? Reach out and support us on [Patreon](https://www.patreon.com/spatie). 
 All pledges will be dedicated to allocating workforce on maintenance and new awesome stuff.
+
+### Sponsor
+
+<img width="90" valign="middle" src="sponsor.svg">
+
+This package is kindly sponsored by [Auth0](https://auth0.com) – The new way to solve Identity.
+
+Auth0 solves the most complex and large-scale identity use cases for global enterprises with their extensible and easy-to-integrate platform, securing billions of logins every year.
+
+Checkout their [identity solutions](https://auth0.com).
 
 ## License
 
