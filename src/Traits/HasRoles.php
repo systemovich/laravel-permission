@@ -142,14 +142,14 @@ trait HasRoles
 
         if ($model->exists) {
             if (! is_null($restrictable)) {
-                $roles = $roles->map(function ($role) use ($restrictable) {
+                $roles = collect($roles)->map(function ($role) use ($restrictable) {
                     return [
                         $role => [
                             'restrictable_id' => $restrictable->getRestrictableId(),
                             'restrictable_type' => $restrictable->getRestrictableTable(),
                         ]
                     ];
-                });
+                })->all();
             }
 
             $this->roles()->sync($roles, false);
