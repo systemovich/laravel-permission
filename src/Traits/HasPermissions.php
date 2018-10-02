@@ -7,9 +7,12 @@ use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Builder;
 use Spatie\Permission\PermissionRegistrar;
 use Spatie\Permission\Contracts\Permission;
+use Spatie\Permission\Contracts\Restrictable;
 use Spatie\Permission\Exceptions\GuardDoesNotMatch;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Spatie\Permission\Exceptions\PermissionDoesNotExist;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 trait HasPermissions
 {
@@ -38,16 +41,7 @@ trait HasPermissions
     /**
      * A model may have multiple direct permissions.
      */
-    public function permissions(): MorphToMany
-    {
-        return $this->morphToMany(
-            config('permission.models.permission'),
-            'model',
-            config('permission.table_names.model_has_permissions'),
-            config('permission.column_names.model_morph_key'),
-            'permission_id'
-        );
-    }
+    abstract public function permissions(): BelongsToMany;
 
     /**
      * Scope the model query to certain permissions only.
@@ -115,7 +109,7 @@ trait HasPermissions
      *
      * @return bool
      */
-    public function hasPermissionTo($permission, $guardName = null): bool
+    public function hasPermissionTo($permission, $guardName = null, Restrictable $restrictable = null): bool
     {
         $permissionClass = $this->getPermissionClass();
 
@@ -137,7 +131,7 @@ trait HasPermissions
             throw new PermissionDoesNotExist;
         }
 
-        return $this->hasDirectPermission($permission) || $this->hasPermissionViaRole($permission);
+        return $this->hasDirectPermission($permission, $restrictable) || $this->hasPermissionViaRole($permission, $restrictable);
     }
 
     /**
@@ -147,14 +141,14 @@ trait HasPermissions
      *
      * @return bool
      */
-    public function hasAnyPermission(...$permissions): bool
+    public function hasAnyPermission($permissions, Restrictable $restrictable = null): bool
     {
         if (is_array($permissions[0])) {
             $permissions = $permissions[0];
         }
 
         foreach ($permissions as $permission) {
-            if ($this->hasPermissionTo($permission)) {
+            if ($this->hasPermissionTo($permission, null, $restrictable)) {
                 return true;
             }
         }
@@ -191,9 +185,9 @@ trait HasPermissions
      *
      * @return bool
      */
-    protected function hasPermissionViaRole(Permission $permission): bool
+    protected function hasPermissionViaRole(Permission $permission, Restrictable $restrictable = null): bool
     {
-        return $this->hasRole($permission->roles);
+        return $this->hasRole($permission->roles, $restrictable);
     }
 
     /**
@@ -203,7 +197,7 @@ trait HasPermissions
      *
      * @return bool
      */
-    public function hasDirectPermission($permission): bool
+    public function hasDirectPermission($permission, Restrictable $restrictable = null): bool
     {
         $permissionClass = $this->getPermissionClass();
 
@@ -225,16 +219,19 @@ trait HasPermissions
             return false;
         }
 
-        return $this->permissions->contains('id', $permission->id);
+         // Needed to preserve the caching mechanism at least for the not scoped permissions
+        return (is_null($restrictable) ? $this->permissions : $this->permissions($restrictable)->get())
+            ->contains('id', $permission->id);
     }
 
     /**
      * Return all the permissions the model has via roles.
      */
-    public function getPermissionsViaRoles(): Collection
+    public function getPermissionsViaRoles(Restrictable $restrictable = null): Collection
     {
-        return $this->load('roles', 'roles.permissions')
-            ->roles->flatMap(function ($role) {
+        $this->load('roles', 'roles.permissions');
+        return (is_null($restrictable) ? $this->roles : $this->roles($restrictable)->get())
+            ->flatMap(function ($role) {
                 return $role->permissions;
             })->sort()->values();
     }
@@ -242,10 +239,10 @@ trait HasPermissions
     /**
      * Return all the permissions the model has, both directly and via roles.
      */
-    public function getAllPermissions(): Collection
+    public function getAllPermissions(Restrictable $restrictable = null): Collection
     {
-        return $this->permissions
-            ->merge($this->getPermissionsViaRoles())
+        return $this->getDirectPermission($restrictable)
+            ->merge($this->getPermissionsViaRoles($restrictable))
             ->sort()
             ->values();
     }
@@ -254,12 +251,18 @@ trait HasPermissions
      * Grant the given permission(s) to a role.
      *
      * @param string|array|\Spatie\Permission\Contracts\Permission|\Illuminate\Support\Collection $permissions
+     * @param \Spatie\Permission\Contracts\Restritable|null $restrictable
      *
      * @return $this
      */
-    public function givePermissionTo(...$permissions)
+    public function givePermissionTo($permissions, Restrictable $restrictable = null)
     {
-        $permissions = collect($permissions)
+        // Permission objects, if directly collected, becomes arrays of fields and the flatten() messes with
+        // the map function giving every single Permission field as parameter for getStoredPermission.
+        // To avoid this, if a Permission is given an empty collection is created and the permission is pushed inside.
+        // In this way, in case of a Permission instance, the object is not flattened,
+        // but for arrays, collections and string everything works as expected.
+        $permissions = (($permissions instanceof Permission) ? collect()->push($permissions) : collect($permissions))
             ->flatten()
             ->map(function ($permission) {
                 return $this->getStoredPermission($permission);
@@ -276,14 +279,26 @@ trait HasPermissions
         $model = $this->getModel();
 
         if ($model->exists) {
+            if (! is_null($restrictable)) {
+                $permissions = $permissions->map(function ($permission) use ($restrictable) {
+                    return [
+                        $permission => [
+                            'restrictable_id' => $restrictable->getRestrictableId(),
+                            'restrictable_type' => $restrictable->getRestrictableTable(),
+                        ]
+                    ];
+                });
+            }
             $this->permissions()->sync($permissions, false);
         } else {
             $class = \get_class($model);
 
-            $class::saved(
-                function ($model) use ($permissions) {
-                    $model->permissions()->sync($permissions, false);
-                });
+            $class::saved(function ($model) use ($permissions, $restrictable) {
+                $model->permissions()->attach($permissions, is_null($restrictable) ? [] : [
+                    'restrictable_id' => $restrictable->getRestrictableId(),
+                    'restrictable_type' => $restrictable->getRestrictableTable(),
+                ], false);
+            });
         }
 
         $this->forgetCachedPermissions();
@@ -295,26 +310,28 @@ trait HasPermissions
      * Remove all current permissions and set the given ones.
      *
      * @param string|array|\Spatie\Permission\Contracts\Permission|\Illuminate\Support\Collection $permissions
+     * @param \Spatie\Permission\Contracts\Restrictable $restrictable
      *
      * @return $this
      */
-    public function syncPermissions(...$permissions)
+    public function syncPermissions($permissions, Restrictable $restrictable = null)
     {
-        $this->permissions()->detach();
+        $this->permissions($restrictable)->detach();
 
-        return $this->givePermissionTo($permissions);
+        return $this->givePermissionTo($permissions, $restrictable);
     }
 
     /**
      * Revoke the given permission.
      *
      * @param \Spatie\Permission\Contracts\Permission|\Spatie\Permission\Contracts\Permission[]|string|string[] $permission
+     * @param \Spatie\Permission\Contracts\Restrictable $restrictable
      *
      * @return $this
      */
-    public function revokePermissionTo($permission)
+    public function revokePermissionTo($permission, Restrictable $restrictable = null)
     {
-        $this->permissions()->detach($this->getStoredPermission($permission));
+        $this->permissions($restrictable)->detach($this->getStoredPermission($permission)->id);
 
         $this->forgetCachedPermissions();
 

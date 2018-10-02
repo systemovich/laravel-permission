@@ -61,9 +61,18 @@ class PermissionServiceProvider extends ServiceProvider
     {
         $this->app->afterResolving('blade.compiler', function (BladeCompiler $bladeCompiler) {
             $bladeCompiler->directive('role', function ($arguments) {
-                list($role, $guard) = explode(',', $arguments.',');
+                $arguments = explode(',', $arguments);
+                $role = $arguments[0];
+                $guard = $arguments[1] ?? '';
+                $restrictableClass = $arguments[2] ?? null;
+                $restrictableId = $arguments[3] ?? null;
+                $restrictable = "null";
 
-                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasRole({$role})): ?>";
+                if ($restrictableId !== null && $restrictableClass !== null) {
+                    $restrictable = "{$restrictableClass}::find({$restrictableId})";
+                }
+
+                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasRole({$role},{$restrictable})): ?>";
             });
             $bladeCompiler->directive('elserole', function ($arguments) {
                 list($role, $guard) = explode(',', $arguments.',');
@@ -75,27 +84,54 @@ class PermissionServiceProvider extends ServiceProvider
             });
 
             $bladeCompiler->directive('hasrole', function ($arguments) {
-                list($role, $guard) = explode(',', $arguments.',');
+                $arguments = explode(',', $arguments);
+                $role = $arguments[0];
+                $guard = $arguments[1] ?? '';
+                $restrictableClass = $arguments[2] ?? null;
+                $restrictableId = $arguments[3] ?? null;
+                $restrictable = "null";
 
-                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasRole({$role})): ?>";
+                if ($restrictableId !== null && $restrictableClass !== null) {
+                    $restrictable = "{$restrictableClass}::find({$restrictableId})";
+                }
+
+                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasRole({$role},{$restrictable})): ?>";
             });
             $bladeCompiler->directive('endhasrole', function () {
                 return '<?php endif; ?>';
             });
 
             $bladeCompiler->directive('hasanyrole', function ($arguments) {
-                list($roles, $guard) = explode(',', $arguments.',');
+                $arguments = explode(',', $arguments);
+                $roles = $arguments[0];
+                $guard = $arguments[1] ?? '';
+                $restrictableClass = $arguments[2] ?? null;
+                $restrictableId = $arguments[3] ?? null;
+                $restrictable = "null";
 
-                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasAnyRole({$roles})): ?>";
+                if ($restrictableId !== null && $restrictableClass !== null) {
+                    $restrictable = "{$restrictableClass}::find({$restrictableId})";
+                }
+
+                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasAnyRole({$roles},{$restrictable})): ?>";
             });
             $bladeCompiler->directive('endhasanyrole', function () {
                 return '<?php endif; ?>';
             });
 
             $bladeCompiler->directive('hasallroles', function ($arguments) {
-                list($roles, $guard) = explode(',', $arguments.',');
+                $arguments = explode(',', $arguments);
+                $roles = $arguments[0];
+                $guard = $arguments[1] ?? '';
+                $restrictableClass = $arguments[2] ?? null;
+                $restrictableId = $arguments[3] ?? null;
+                $restrictable = "null";
 
-                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasAllRoles({$roles})): ?>";
+                if ($restrictableId !== null && $restrictableClass !== null) {
+                    $restrictable = "{$restrictableClass}::find({$restrictableId})";
+                }
+
+                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasAllRoles({$roles},{$restrictable})): ?>";
             });
             $bladeCompiler->directive('endhasallroles', function () {
                 return '<?php endif; ?>';

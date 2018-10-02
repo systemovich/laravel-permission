@@ -7,6 +7,7 @@ use Spatie\Permission\Contracts\Role;
 use Illuminate\Database\Eloquent\Builder;
 use Spatie\Permission\PermissionRegistrar;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
+use Spatie\Permission\Contracts\Restrictable;
 
 trait HasRoles
 {
@@ -36,8 +37,10 @@ trait HasRoles
 
     /**
      * A model may have multiple roles.
+     *
+     * @param \Spatie\Permission\Contracts\Restrictable|null $restrictable
      */
-    public function roles(): MorphToMany
+    public function roles(Restrictable $restrictable = null): MorphToMany
     {
         return $this->morphToMany(
             config('permission.models.role'),
@@ -45,7 +48,25 @@ trait HasRoles
             config('permission.table_names.model_has_roles'),
             config('permission.column_names.model_morph_key'),
             'role_id'
-        );
+        )->withPivot('restrictable_id', 'restrictable_type')
+        ->wherePivot('restrictable_id', is_null($restrictable) ? null : $restrictable->getRestrictableId())
+        ->wherePivot('restrictable_type', is_null($restrictable) ? null : $restrictable->getRestrictableTable());
+    }
+
+    /**
+     * A model may have multiple direct permissions.
+     */
+    public function permissions(Restrictable $restrictable = null): MorphToMany
+    {
+        return $this->morphToMany(
+            config('permission.models.permission'),
+            'model',
+            config('permission.table_names.model_has_permissions'),
+            config('permission.column_names.model_morph_key'),
+            'permission_id'
+        )->withPivot('restrictable_id', 'restrictable_type')
+        ->wherePivot('restrictable_id', is_null($restrictable) ? null : $restrictable->getRestrictableId())
+        ->wherePivot('restrictable_type', is_null($restrictable) ? null : $restrictable->getRestrictableTable());
     }
 
     /**
@@ -92,9 +113,14 @@ trait HasRoles
      *
      * @return $this
      */
-    public function assignRole(...$roles)
+    public function assignRole($roles, Restrictable $restrictable = null)
     {
-        $roles = collect($roles)
+        // Role objects, if directly collected, becomes arrays of fields and the flatten() messes with
+        // the map function giving every single Role field as parameter for getStoredRole.
+        // To avoid this, if a Role is given an empty collection is created and the role is pushed inside.
+        // In this way, in case of a Role instance, the object is not flattened,
+        // but for arrays, collections and string everything works as expected.
+        $roles = (($roles instanceof Role) ? collect()->push($roles) : collect($roles))
             ->flatten()
             ->map(function ($role) {
                 if (empty($role)) {
@@ -115,14 +141,27 @@ trait HasRoles
         $model = $this->getModel();
 
         if ($model->exists) {
+            if (! is_null($restrictable)) {
+                $roles = $roles->map(function ($role) use ($restrictable) {
+                    return [
+                        $role => [
+                            'restrictable_id' => $restrictable->getRestrictableId(),
+                            'restrictable_type' => $restrictable->getRestrictableTable(),
+                        ]
+                    ];
+                });
+            }
+
             $this->roles()->sync($roles, false);
         } else {
             $class = \get_class($model);
 
-            $class::saved(
-                function ($model) use ($roles) {
-                    $model->roles()->sync($roles, false);
-                });
+            $class::saved(function ($model) use ($roles, $restrictable) {
+                $model->roles()->attach($roles, is_null($restrictable) ? [] : [
+                    'restrictable_id' => $restrictable->getRestrictableId(),
+                    'restrictable_type' => $restrictable->getRestrictableTable(),
+                ], false);
+            });
         }
 
         $this->forgetCachedPermissions();
@@ -135,9 +174,9 @@ trait HasRoles
      *
      * @param string|\Spatie\Permission\Contracts\Role $role
      */
-    public function removeRole($role)
+    public function removeRole($role, Restrictable $restrictable = null)
     {
-        $this->roles()->detach($this->getStoredRole($role));
+        $this->roles($restrictable)->detach($this->getStoredRole($role));
     }
 
     /**
@@ -147,11 +186,11 @@ trait HasRoles
      *
      * @return $this
      */
-    public function syncRoles(...$roles)
+    public function syncRoles($roles, Restrictable $restrictable = null)
     {
-        $this->roles()->detach();
+        $this->roles($restrictable)->detach();
 
-        return $this->assignRole($roles);
+        return $this->assignRole($roles, $restrictable);
     }
 
     /**
@@ -161,23 +200,26 @@ trait HasRoles
      *
      * @return bool
      */
-    public function hasRole($roles): bool
+    public function hasRole($roles, Restrictable $restrictable = null): bool
     {
+        // Needed to preserve the caching mechanism at least for the not scoped roles
+        $roleCachedRelation = (is_null($restrictable) ? $this->roles : $this->roles($restrictable)->get());
+
         if (is_string($roles) && false !== strpos($roles, '|')) {
             $roles = $this->convertPipeToArray($roles);
         }
 
         if (is_string($roles)) {
-            return $this->roles->contains('name', $roles);
+            return $roleCachedRelation->contains('name', $roles);
         }
 
         if ($roles instanceof Role) {
-            return $this->roles->contains('id', $roles->id);
+            return $roleCachedRelation->contains('id', $roles->id);
         }
 
         if (is_array($roles)) {
             foreach ($roles as $role) {
-                if ($this->hasRole($role)) {
+                if ($this->hasRole($role, $restrictable)) {
                     return true;
                 }
             }
@@ -185,7 +227,7 @@ trait HasRoles
             return false;
         }
 
-        return $roles->intersect($this->roles)->isNotEmpty();
+        return $roles->intersect($roleCachedRelation)->isNotEmpty();
     }
 
     /**
@@ -195,9 +237,9 @@ trait HasRoles
      *
      * @return bool
      */
-    public function hasAnyRole($roles): bool
+    public function hasAnyRole($roles, Restrictable $restrictable = null): bool
     {
-        return $this->hasRole($roles);
+        return $this->hasRole($roles, $restrictable);
     }
 
     /**
@@ -209,31 +251,35 @@ trait HasRoles
      */
     public function hasAllRoles($roles): bool
     {
+        // Needed to preserve the caching mechanism at least for the not scoped roles
+        $roleCachedRelation = (is_null($restrictable) ? $this->roles : $this->roles($restrictable)->get());
+
         if (is_string($roles) && false !== strpos($roles, '|')) {
             $roles = $this->convertPipeToArray($roles);
         }
 
         if (is_string($roles)) {
-            return $this->roles->contains('name', $roles);
+            return $roleCachedRelation->contains('name', $roles);
         }
 
         if ($roles instanceof Role) {
-            return $this->roles->contains('id', $roles->id);
+            return $roleCachedRelation->contains('id', $roles->id);
         }
 
         $roles = collect()->make($roles)->map(function ($role) {
             return $role instanceof Role ? $role->name : $role;
         });
 
-        return $roles->intersect($this->roles->pluck('name')) == $roles;
+        return $roles->intersect($roleCachedRelation->pluck('name')) == $roles;
     }
 
     /**
      * Return all permissions directly coupled to the model.
      */
-    public function getDirectPermissions(): Collection
+    public function getDirectPermissions(Restrictable $restrictable = null): Collection
     {
-        return $this->permissions;
+        // Needed to preserve the caching mechanism at least for the not scoped permissions
+        return (is_null($restrictable) ? $this->permissions : $this->permissions($restrictable)->get());
     }
 
     public function getRoleNames(): Collection
