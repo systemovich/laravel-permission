@@ -42,15 +42,21 @@ trait HasRoles
      */
     public function roles(Restrictable $restrictable = null): MorphToMany
     {
-        return $this->morphToMany(
+        $relation = $this->morphToMany(
             config('permission.models.role'),
             'model',
             config('permission.table_names.model_has_roles'),
             config('permission.column_names.model_morph_key'),
             'role_id'
-        )->withPivot('restrictable_id', 'restrictable_type')
-        ->wherePivot('restrictable_id', is_null($restrictable) ? null : $restrictable->getRestrictableId())
-        ->wherePivot('restrictable_type', is_null($restrictable) ? null : $restrictable->getRestrictableTable());
+        )->withPivot('restrictable_id', 'restrictable_type');
+
+        if (! is_null($restrictable)) {
+            $relation
+                ->wherePivot('restrictable_id', $restrictable->getRestrictableId())
+                ->wherePivot('restrictable_type', $restrictable->getRestrictableTable());
+        }
+
+        return $relation;
     }
 
     /**
@@ -58,15 +64,21 @@ trait HasRoles
      */
     public function permissions(Restrictable $restrictable = null): MorphToMany
     {
-        return $this->morphToMany(
+        $relations = $this->morphToMany(
             config('permission.models.permission'),
             'model',
             config('permission.table_names.model_has_permissions'),
             config('permission.column_names.model_morph_key'),
             'permission_id'
-        )->withPivot('restrictable_id', 'restrictable_type')
-        ->wherePivot('restrictable_id', is_null($restrictable) ? null : $restrictable->getRestrictableId())
-        ->wherePivot('restrictable_type', is_null($restrictable) ? null : $restrictable->getRestrictableTable());
+        )->withPivot('restrictable_id', 'restrictable_type');
+
+        if (! is_null($restrictable)) {
+            $relation
+                ->wherePivot('restrictable_id', $restrictable->getRestrictableId())
+                ->wherePivot('restrictable_type', $restrictable->getRestrictableTable());
+        }
+
+        return $relation;
     }
 
     /**
@@ -138,29 +150,25 @@ trait HasRoles
             ->map->id
             ->all();
 
+        if (! is_null($restrictable)) {
+            $roles = collect($roles)->reduce(function ($carry, $role) use ($restrictable) {
+                $carry[$role] = [
+                    'restrictable_id' => $restrictable->getRestrictableId(),
+                    'restrictable_type' => $restrictable->getRestrictableTable(),
+                ];
+                return $carry;
+            }, []);
+        }
+
         $model = $this->getModel();
 
         if ($model->exists) {
-            if (! is_null($restrictable)) {
-                $roles = collect($roles)->map(function ($role) use ($restrictable) {
-                    return [
-                        $role => [
-                            'restrictable_id' => $restrictable->getRestrictableId(),
-                            'restrictable_type' => $restrictable->getRestrictableTable(),
-                        ]
-                    ];
-                })->all();
-            }
-
             $this->roles()->sync($roles, false);
         } else {
             $class = \get_class($model);
 
-            $class::saved(function ($model) use ($roles, $restrictable) {
-                $model->roles()->attach($roles, is_null($restrictable) ? [] : [
-                    'restrictable_id' => $restrictable->getRestrictableId(),
-                    'restrictable_type' => $restrictable->getRestrictableTable(),
-                ], false);
+            $class::saved(function ($model) use ($roles) {
+                $model->roles()->sync($roles, false);
             });
         }
 

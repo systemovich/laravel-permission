@@ -276,28 +276,25 @@ trait HasPermissions
             ->map->id
             ->all();
 
+        if (! is_null($restrictable)) {
+            $permissions = collect($permissions)->reduce(function ($carry, $permission) use ($restrictable) {
+                $carry[$permission] = [
+                    'restrictable_id' => $restrictable->getRestrictableId(),
+                    'restrictable_type' => $restrictable->getRestrictableTable(),
+                ];
+                return $carry;
+            }, []);
+        }
+
         $model = $this->getModel();
 
         if ($model->exists) {
-            if (! is_null($restrictable)) {
-                $permissions = $permissions->map(function ($permission) use ($restrictable) {
-                    return [
-                        $permission => [
-                            'restrictable_id' => $restrictable->getRestrictableId(),
-                            'restrictable_type' => $restrictable->getRestrictableTable(),
-                        ]
-                    ];
-                });
-            }
             $this->permissions()->sync($permissions, false);
         } else {
             $class = \get_class($model);
 
-            $class::saved(function ($model) use ($permissions, $restrictable) {
-                $model->permissions()->attach($permissions, is_null($restrictable) ? [] : [
-                    'restrictable_id' => $restrictable->getRestrictableId(),
-                    'restrictable_type' => $restrictable->getRestrictableTable(),
-                ], false);
+            $class::saved(function ($model) use ($permissions) {
+                $model->permissions()->synce($permissions, false);
             });
         }
 
