@@ -64,7 +64,7 @@ trait HasRoles
      */
     public function permissions(Restrictable $restrictable = null): MorphToMany
     {
-        $relations = $this->morphToMany(
+        $relation = $this->morphToMany(
             config('permission.models.permission'),
             'model',
             config('permission.table_names.model_has_permissions'),
