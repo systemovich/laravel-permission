@@ -241,7 +241,7 @@ trait HasPermissions
      */
     public function getAllPermissions(Restrictable $restrictable = null): Collection
     {
-        return $this->getDirectPermission($restrictable)
+        return $this->getDirectPermissions($restrictable)
             ->merge($this->getPermissionsViaRoles($restrictable))
             ->sort()
             ->values();
