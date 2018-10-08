@@ -163,12 +163,12 @@ trait HasRoles
         $model = $this->getModel();
 
         if ($model->exists) {
-            $this->roles()->sync($roles, false);
+            $this->roles()->attach($roles, false);
         } else {
             $class = \get_class($model);
 
             $class::saved(function ($model) use ($roles) {
-                $model->roles()->sync($roles, false);
+                $model->roles()->attach($roles, false);
             });
         }
 
