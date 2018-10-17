@@ -105,11 +105,12 @@ trait HasPermissions
      * Determine if the model may perform the given permission.
      *
      * @param string|int|\Spatie\Permission\Contracts\Permission $permission
+     * @param \Spatie\Permission\Contracts\Restrictable $restrictable
      * @param string|null $guardName
      *
      * @return bool
      */
-    public function hasPermissionTo($permission, $guardName = null, Restrictable $restrictable = null): bool
+    public function hasPermissionTo($permission, Restrictable $restrictable = null, $guardName = null): bool
     {
         $permissionClass = $this->getPermissionClass();
 
@@ -148,7 +149,7 @@ trait HasPermissions
         }
 
         foreach ($permissions as $permission) {
-            if ($this->hasPermissionTo($permission, null, $restrictable)) {
+            if ($this->hasPermissionTo($permission, $restrictable)) {
                 return true;
             }
         }

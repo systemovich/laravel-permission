@@ -40,6 +40,9 @@ class PermissionRegistrar
         $this->gate->before(function (Authorizable $user, string $ability, $restrictable) {
             try {
                 if (method_exists($user, 'hasPermissionTo')) {
+                    if (is_array($restrictable) && empty($restrictable)) {
+                        $restrictable = null;
+                    }
                     return $user->hasPermissionTo($ability, $restrictable) ?: null;
                 }
             } catch (PermissionDoesNotExist $e) {
