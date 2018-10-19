@@ -290,12 +290,12 @@ trait HasPermissions
         $model = $this->getModel();
 
         if ($model->exists) {
-            $this->permissions()->sync($permissions, false);
+            $this->permissions()->attach($permissions, [], false);
         } else {
             $class = \get_class($model);
 
             $class::saved(function ($model) use ($permissions) {
-                $model->permissions()->synce($permissions, false);
+                $model->permissions()->attach($permissions, [], false);
             });
         }
 
